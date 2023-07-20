@@ -1,12 +1,9 @@
-const { Builder, By, Key, until } = require('selenium-webdriver');
-const chrome = require('selenium-webdriver/chrome');
+const cheerio = require('cheerio');
+const axios = require('axios');
 const fetch = require('node-fetch');
 const fs = require('fs')
 
 
-let driver;
-
-const DRIVER_DIRECTORY = './chromedriver'
 const NEWS_URLS = [
     'https://www.hani.co.kr/arti/society/labor/1100937.html',
     'https://www.hani.co.kr/arti/society/labor/1100924.html',
@@ -19,37 +16,26 @@ const NEWS_URLS = [
 ]
 
 async function main() {
-    await init();
-
-    const results = await Promise.all(NEWS_URLS.map(async (link_url) => {
+    const results = []
+    for await (const link_url of NEWS_URLS) {
         const result = {
             media: "한겨레",
             link_url,
             topics: [""]
         }
 
-        await driver.get(link_url);
-        await sleep(1000)
+        const { data } = await axios.get(link_url)
+        const $ = cheerio.load(data);
 
-        result.title = await driver.findElement(By.css('#article_view_headline .title')).getText()
-        result.author = await driver.findElement(By.css('.kiza-info>.name strong')).getText()
-        result.datetime = new Date(await driver.findElement(By.css('#article_view_headline .date-time>span')).getText()).toISOString()
-        result.content = await driver.findElement(By.css('.article-text>.article-text-font-size>.text')).getText()
+        result.title = $('#article_view_headline .title').text()
+        result.author = $('.kiza-info>.name strong').html()
+        result.datetime = new Date($('#article_view_headline .date-time>span:nth-child(1)').html().slice(12)).toISOString()
+        result.content = $('.article-text>.article-text-font-size>.text').text().replace(/\t/g, '')
 
-        console.log(result)
-
-        return result
-    }))
-    writeFile('scrap.json', JSON.stringify(results))
-}
-
-async function init() {
-    const service = new chrome.ServiceBuilder(DRIVER_DIRECTORY);
-
-    driver = await new Builder().forBrowser('chrome').setChromeService(service).build();
-    if (!driver) {
-        return console.error('driver not exist');
+        results.push(result);
     }
+
+    writeFile('scrap.json', JSON.stringify(results))
 }
 
 function writeFile(fileName, data) {
